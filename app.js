@@ -140,7 +140,15 @@ function assetCard(asset, options = {}){
   const cls=changeClass(asset.changePercent);
   const favorite=favorites.includes(asset.id);
   const draggable=Boolean(options.draggable);
+  const removable=Boolean(options.removable);
   const grip=draggable?`<span class="drag-grip" title="拖动排序" aria-hidden="true"><svg viewBox="0 0 12 20"><circle cx="4" cy="4" r="1.3"/><circle cx="8" cy="4" r="1.3"/><circle cx="4" cy="10" r="1.3"/><circle cx="8" cy="10" r="1.3"/><circle cx="4" cy="16" r="1.3"/><circle cx="8" cy="16" r="1.3"/></svg></span>`:'';
+  const action=removable
+    ? `<button class="favorite-remove" data-remove-favorite="${asset.id}" title="从自选移除" aria-label="从自选移除">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>
+      </button>`
+    : `<button class="favorite-star ${favorite?'active':''}" data-favorite="${asset.id}" title="${favorite?'从自选移除':'添加到自选'}" aria-label="${favorite?'从自选移除':'添加到自选'}" aria-pressed="${favorite}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>
+      </button>`;
   return `<article class="asset-card ${draggable?'draggable-card':''}"${draggable?` data-drag-id="${asset.id}"`:''}>
     <button class="card-open" data-id="${asset.id}" aria-label="查看 ${asset.name} 详情">
       <div class="asset-card-head"><div class="asset-title-group">${grip}<div><div class="asset-name">${asset.name}</div><div class="asset-symbol">${asset.symbol}</div></div></div><span class="asset-market">${asset.market}</span></div>
@@ -148,9 +156,7 @@ function assetCard(asset, options = {}){
       <div class="mini-chart" title="分时走势">${sparkSvg(asset.spark,asset.changePercent>=0)}</div>
       <div class="asset-meta"><span>${asset.currency} · ${asset.unit}</span><span>${formatTime(lastUpdate)}</span></div>
     </button>
-    <button class="favorite-star ${favorite?'active':''}" data-favorite="${asset.id}" title="${favorite?'从自选移除':'添加到自选'}" aria-label="${favorite?'从自选移除':'添加到自选'}" aria-pressed="${favorite}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>
-    </button>
+    ${action}
   </article>`;
 }
 
@@ -216,7 +222,7 @@ function marketBoard(layout){
     const orderAttr = group.reorder ? ` data-order-key="${layout.key}"` : '';
     return `<div class="board-group">
       <div class="group-head"><span>${group.label}</span><i></i>${hint}${addButton}<em>${items.length}</em></div>
-      <div class="asset-grid ${columns}"${orderAttr}>${items.map(asset => assetCard(asset, { draggable: group.reorder })).join('')}</div>
+      <div class="asset-grid ${columns}"${orderAttr}>${items.map(asset => assetCard(asset, { draggable: group.reorder, removable: group.removable })).join('')}</div>
     </div>`;
   }).join('');
   return `<section class="market-board board-${layout.key}">
@@ -235,7 +241,7 @@ function overviewLayout(layout){
   return { ...layout, groups: layout.groups.filter(group => group.kind !== 'stock') };
 }
 
-function groupedBoards(items, { titleSuffix = '', subtitle = '公开行情源', label = '资产' } = {}){
+function groupedBoards(items, { titleSuffix = '', subtitle = '公开行情源', label = '资产', removable = false } = {}){
   return marketOrder.map(category => {
     const ids = items.filter(asset => asset.category === category).map(asset => asset.id);
     if (!ids.length) return '';
@@ -245,7 +251,7 @@ function groupedBoards(items, { titleSuffix = '', subtitle = '公开行情源', 
       ...layout,
       title: `${layout.title}${titleSuffix}`,
       subtitle,
-      groups: [{ label: `${label} · ${ids.length}`, ids, columns }]
+      groups: [{ label: `${label} · ${ids.length}`, ids, columns, removable }]
     });
   }).join('');
 }
@@ -253,7 +259,7 @@ function groupedBoards(items, { titleSuffix = '', subtitle = '公开行情源', 
 function favoritesView(){
   const items = assets.filter(asset => favorites.includes(asset.id));
   if (!items.length) return `<div class="empty-state"><div class="empty-icon">☆</div><h2>暂无自选资产</h2><p>打开资产详情并点击“添加到自选”</p></div>`;
-  return `<div class="board-note">已按市场分类展示 ${items.length} 个自选资产</div>` + groupedBoards(items, { titleSuffix: ' · 自选', subtitle: 'MY WATCHLIST', label: '已关注' });
+  return `<div class="board-note">已按市场分类展示 ${items.length} 个自选资产 · 点击卡片右上角删除图标可移除</div>` + groupedBoards(items, { titleSuffix: ' · 自选', subtitle: 'MY WATCHLIST', label: '已关注', removable: true });
 }
 
 function renderCategories(){
@@ -295,7 +301,7 @@ function openDrawer(asset){
     <div class="detail-price-row"><div><div class="detail-price">${formatPrice(asset)}</div><div style="color:var(--muted);font-size:10px;margin-top:5px">${asset.currency} · ${asset.unit}</div></div><div class="detail-change ${cls}"><div>${signed(asset.change,priceDigits(asset.price))} ${asset.currency}</div><div>${signed(asset.changePercent)}%</div></div></div>
     <div class="range-tabs">${['1D','5D','1M','3M','1Y'].map((r,i)=>`<button class="range-tab ${i===0?'active':''}" data-range="${r}">${r}</button>`).join('')}</div>
     <div class="main-chart" id="main-chart"><div class="chart-tooltip" id="chart-tooltip"></div></div>
-    <button class="favorite-btn ${isFav?'active':''}" id="favorite-detail-btn">${isFav?'★ 已在自选':'☆ 添加到自选'}</button>
+    <button class="favorite-btn ${isFav?'active':''}" id="favorite-detail-btn">${isFav?'★ 已在自选（点击移除）':'☆ 添加到自选'}</button>
     <div class="metrics-grid">${metricKeys.map(([k,v])=>`<div class="metric"><span>${k}</span><strong>${v||'—'}</strong></div>`).join('')}</div>
     <div class="detail-footer"><span>更新时间 ${formatTime(lastUpdate)}</span><span>公开行情源 · 实时或交易所延时数据</span></div>
   </div>`;
@@ -535,7 +541,7 @@ function toggleFavorite(id, fromDrawer = false){
     if (button) {
       const active = favorites.includes(id);
       button.classList.toggle('active', active);
-      button.textContent = active ? '★ 已在自选' : '☆ 添加到自选';
+      button.textContent = active ? '★ 已在自选（点击移除）' : '☆ 添加到自选';
     }
   }
 }
@@ -580,6 +586,8 @@ $('#market-content').addEventListener('click', event => {
   }
   const favoriteButton = event.target.closest('[data-favorite]');
   if (favoriteButton) { toggleFavorite(favoriteButton.dataset.favorite); return; }
+  const removeFavoriteButton = event.target.closest('[data-remove-favorite]');
+  if (removeFavoriteButton) { toggleFavorite(removeFavoriteButton.dataset.removeFavorite); return; }
   const card = event.target.closest('.card-open');
   if (!card) return;
   const asset = assets.find(item => item.id === card.dataset.id);
