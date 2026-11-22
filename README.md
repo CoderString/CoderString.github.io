@@ -19,23 +19,27 @@ npm start
 
 然后访问 `http://localhost:4173`。
 
-## GitHub Pages
+## GitHub Pages / 纯静态模式
 
 GitHub Pages 地址：<https://coderstring.github.io/>
 
-GitHub Pages 只能托管静态文件，无法运行 `server.js` 行情代理。因此：
+前端内置 `static-api.js`，在 GitHub Pages 上会自动启用纯静态数据模式：
 
-- 直接发布到 GitHub Pages 时，页面可以打开，但行情接口不可用，会提示需要 Node 后端。
-- 如需在 GitHub Pages 上显示实时行情，请先把 `server.js` 部署到支持 Node 的服务（如 Render、Railway、Fly.io），得到一个 HTTPS 地址。
-- 然后修改 `config.js`：
+- 东方财富行情、分时和搜索通过 JSONP 访问
+- CoinLore / Gate.io / Gold API / DefiLlama 通过 CORS 直接访问
+- 因此 **GitHub Pages 不需要后端地址也能显示实时行情**
+
+限制：
+
+- 股票和指数的静态模式支持 1D / 5D 分时，1M / 3M / 1Y 需要后端 K 线接口。
+- 如需完整历史区间或更稳定的服务，仍可部署 `server.js`，然后在 `config.js` 中配置：
 
 ```js
 window.MARKET_API_BASE = 'https://你的后端地址';
 ```
 
-再发布到 GitHub Pages，前端就会请求远程后端。`server.js` 已开启 `Access-Control-Allow-Origin: *`，支持跨域访问。
-
-也可以直接把整个项目部署到 Render 等 Node 平台，前后端一起运行，无需 GitHub Pages。
+本地测试纯静态模式：访问 `http://localhost:4173/?static=1`。
+本地正常模式：`npm start`，使用 `server.js` 代理。
 
 ## 总览页
 

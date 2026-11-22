@@ -102,6 +102,14 @@ const $ = (s,root=document) => root.querySelector(s);
 const API_BASE = String(window.MARKET_API_BASE || '').replace(/\/$/, '');
 const apiUrl = path => `${API_BASE}${path}`;
 const isStaticPagesHost = /\.github\.io$/i.test(location.hostname);
+const forceStaticApi = new URLSearchParams(location.search).has('static');
+const useStaticApi = !API_BASE && (isStaticPagesHost || forceStaticApi);
+
+async function apiFetch(path, options = {}) {
+  if (useStaticApi && window.MarketStaticApi) return window.MarketStaticApi.fetch(path, options);
+  return fetch(apiUrl(path), options);
+}
+
 const categoryTabs = $('#category-tabs');
 
 function priceDigits(price){
@@ -308,7 +316,7 @@ function renderMainChart(asset,range){
     : asset.category === '加密货币' && asset.symbol
       ? `crypto=${encodeURIComponent(asset.symbol)}&range=${encodeURIComponent(range)}`
       : `id=${encodeURIComponent(asset.id)}&range=${encodeURIComponent(range)}`;
-  fetch(apiUrl(`/api/chart?${chartQuery}`),{cache:'no-store'})
+  apiFetch(`/api/chart?${chartQuery}`,{cache:'no-store'})
     .then(response=>{if(!response.ok)throw new Error(`图表数据错误 ${response.status}`);return response.json()})
     .then(data=>{
       const vals=(data.points||[]).filter(Number.isFinite);
@@ -371,7 +379,7 @@ async function fetchRealData(options = {}) {
   const btn = $('#refresh-btn');
   btn.classList.add('spinning');
   try {
-    const response = await fetch(apiUrl('/api/market'), {cache:'no-store'});
+    const response = await apiFetch('/api/market', {cache:'no-store'});
     if (!response.ok) throw new Error(`行情服务错误 ${response.status}`);
     const data = await response.json();
 
@@ -393,8 +401,8 @@ async function fetchRealData(options = {}) {
                 symbol: asset.symbol || '',
                 geckoId: asset.geckoId || ''
               })
-            : new URLSearchParams({ secid: asset.secid, category: asset.category });
-          const quoteResponse = await fetch(apiUrl(`/api/quote?${params.toString()}`), {cache:'no-store'});
+            : new URLSearchParams({ secid: asset.secid, category: asset.category, type: asset.type || '' });
+          const quoteResponse = await apiFetch(`/api/quote?${params.toString()}`, {cache:'no-store'});
           if (!quoteResponse.ok) throw new Error(`行情服务错误 ${quoteResponse.status}`);
           return [asset.id, await quoteResponse.json()];
         } catch (error) {
@@ -459,8 +467,8 @@ async function fetchRealData(options = {}) {
       asset.changePercent = null;
       asset.spark = [];
     });
-    $('#alert-text').textContent = isStaticPagesHost && !API_BASE
-      ? '当前是 GitHub Pages 静态托管，行情接口需要 Node 后端。请本地运行 npm start，或在 config.js 中配置已部署的 HTTPS 后端地址。'
+    $('#alert-text').textContent = useStaticApi
+      ? `静态模式行情获取失败：${error.message}`
       : `真实行情获取失败：${error.message}`;
     $('#alert-bar').hidden = false;
   } finally {
@@ -817,7 +825,7 @@ async function searchAddAssets(query){
   const requestId = ++addSearchRequest;
   box.innerHTML = '<div class="add-hint">正在搜索…</div>';
   try {
-    const response = await fetch(apiUrl(`/api/search?q=${encodeURIComponent(keyword)}`), {cache:'no-store'});
+    const response = await apiFetch(`/api/search?q=${encodeURIComponent(keyword)}`, {cache:'no-store'});
     if (!response.ok) throw new Error(`搜索服务错误 ${response.status}`);
     const data = await response.json();
     if (requestId !== addSearchRequest) return;
