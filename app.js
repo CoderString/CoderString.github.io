@@ -401,7 +401,7 @@ async function fetchRealData(options = {}) {
                 symbol: asset.symbol || '',
                 geckoId: asset.geckoId || ''
               })
-            : new URLSearchParams({ secid: asset.secid, category: asset.category, type: asset.type || '' });
+            : new URLSearchParams({ secid: asset.secid, category: asset.category, symbol: asset.symbol || '', type: asset.type || '' });
           const quoteResponse = await apiFetch(`/api/quote?${params.toString()}`, {cache:'no-store'});
           if (!quoteResponse.ok) throw new Error(`行情服务错误 ${quoteResponse.status}`);
           return [asset.id, await quoteResponse.json()];

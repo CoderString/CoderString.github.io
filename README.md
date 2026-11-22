@@ -27,6 +27,7 @@ GitHub Pages 地址：<https://coderstring.github.io/>
 
 - 东方财富行情、分时和搜索通过 JSONP 访问
 - CoinLore / Gate.io / Gold API / DefiLlama 通过 CORS 直接访问
+- 东方财富不可用时自动回退腾讯财经报价
 - 因此 **GitHub Pages 不需要后端地址也能显示实时行情**
 
 限制：
@@ -62,6 +63,7 @@ window.MARKET_API_BASE = 'https://你的后端地址';
 
 - 美股、A 股与港股：东方财富公开行情接口，可提供开盘价、昨收价、最高/最低价、成交量、市值、市盈率和 52 周区间。
 - 美股备用源：Nasdaq 公开报价接口，仅在东方财富请求失败时使用。
+- 备用行情：腾讯财经公开接口，在东方财富 push2 不可用时为美股、A 股、港股和原油提供报价兜底。
 - 加密货币：CoinLore 为主报价源，Gate.io 与 DefiLlama 作为备用源；分时走势与 K 线来自 Gate.io，BTC/ETH 在 Gate.io 不可用时回退 Nasdaq。
 - 贵金属：东方财富提供现货黄金/白银分时行情，包含开盘价、昨收价、最高/最低价；Gold API 作为备用源。
 - 石油：东方财富提供 NYMEX WTI 原油与 ICE 布伦特原油分时行情，支持 1D / 5D 走势图。

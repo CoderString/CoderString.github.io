@@ -39,6 +39,18 @@
     brent: { secid: '112.B00Y', currency: 'USD' }
   };
 
+  const TENCENT_ASSETS = {
+    spx: 'usINX', nasdaq: 'usIXIC', dji: 'usDJI',
+    aapl: 'usAAPL', msft: 'usMSFT', nvda: 'usNVDA',
+    sh: 'sh000001', sz: 'sz399001', csi300: 'sh000300', gem: 'sz399006',
+    kweichow: 'sh600519', catl: 'sz300750',
+    hsi: 'hkHSI', hstech: 'hkHSTECH', hscei: 'hkHSCEI',
+    '0700': 'hk00700', '9988': 'hk09988',
+    wti: 'hf_CL', brent: 'hf_OIL'
+  };
+
+  const INDEX_ASSET_IDS = new Set(['spx', 'nasdaq', 'dji', 'sh', 'sz', 'csi300', 'gem', 'hsi', 'hstech', 'hscei']);
+
   const SYMBOL_TO_GECKO = {
     BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', DOGE: 'dogecoin', XRP: 'ripple',
     ADA: 'cardano', BNB: 'binancecoin', LTC: 'litecoin', SHIB: 'shiba-inu',
@@ -115,6 +127,15 @@
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
+  }
+
+  async function fetchText(url, timeout = 12000) {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeout)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.text();
   }
 
   function providerAvailable(name) {
@@ -211,6 +232,102 @@
     quote.w52h = null;
     quote.w52l = null;
     return quote;
+  }
+
+  async function tencentMinuteSpark(code) {
+    if (!/^(sh|sz|hk|us)/.test(code)) return [];
+    try {
+      const data = await fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`, 8000);
+      const rows = data?.data?.[code]?.data?.data || [];
+      const closes = rows
+        .map(row => Number.parseFloat(String(row).split(' ')[1]))
+        .filter(value => Number.isFinite(value) && value > 0);
+      return closes.length > 1 ? downsample(closes, 60) : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function parseTencentQuote(raw, currency) {
+    if (!raw) throw new Error('腾讯行情未返回数据');
+    if (raw.includes('~')) {
+      const parts = raw.split('~');
+      const price = toNumber(parts[3]);
+      const previous = toNumber(parts[4]);
+      const percent = toNumber(parts[32]);
+      if (!Number.isFinite(price)) throw new Error('腾讯行情报价无效');
+      return {
+        price,
+        previousClose: Number.isFinite(previous)
+          ? previous
+          : (Number.isFinite(percent) && percent > -100 ? price / (1 + percent / 100) : null),
+        open: toNumber(parts[5]),
+        high: toNumber(parts[33]),
+        low: toNumber(parts[34]),
+        volume: toNumber(parts[6]),
+        marketCap: null,
+        pe: null,
+        w52h: null,
+        w52l: null,
+        currency,
+        spark: [],
+        source: '腾讯财经'
+      };
+    }
+
+    const cells = raw.split(',');
+    const price = toNumber(cells[0]);
+    const percent = toNumber(cells[1]);
+    const previous = toNumber(cells[7]);
+    if (!Number.isFinite(price)) throw new Error('腾讯行情报价无效');
+    return {
+      price,
+      previousClose: Number.isFinite(previous)
+        ? previous
+        : (Number.isFinite(percent) && percent > -100 ? price / (1 + percent / 100) : null),
+      open: toNumber(cells[8]),
+      high: toNumber(cells[4]),
+      low: toNumber(cells[5]),
+      volume: null,
+      marketCap: null,
+      pe: null,
+      w52h: null,
+      w52l: null,
+      currency,
+      spark: [],
+      source: '腾讯财经'
+    };
+  }
+
+  async function tencentQuote(code, currency) {
+    const text = await fetchText(`https://qt.gtimg.cn/q=${code}`, 10000);
+    const match = text.match(/="([^"]*)"/);
+    if (!match) throw new Error('腾讯行情未返回数据');
+    const quote = parseTencentQuote(match[1], currency);
+    quote.spark = await tencentMinuteSpark(code);
+    return quote;
+  }
+
+  async function tencentMinuteChart(code, range) {
+    if (range !== '1D') {
+      return { points: [], timestamps: [], source: '静态模式暂不支持该区间' };
+    }
+    const data = await fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`, 8000);
+    const rows = data?.data?.[code]?.data?.data || [];
+    const date = data?.data?.[code]?.data?.date || new Date().toISOString().slice(0, 10);
+    const points = [];
+    const timestamps = [];
+    rows.forEach(row => {
+      const cells = String(row).split(' ');
+      const price = Number.parseFloat(cells[1]);
+      if (!Number.isFinite(price) || price <= 0) return;
+      points.push(price);
+      const time = String(cells[0] || '');
+      const stamp = Date.parse(`${date}T${time.slice(0, 2)}:${time.slice(2, 4)}:00`);
+      timestamps.push(Number.isFinite(stamp) ? Math.floor(stamp / 1000) : null);
+    });
+    if (points.length < 2) throw new Error('腾讯财经未返回分时数据');
+    return { points, timestamps, source: '腾讯财经 · 分时' };
   }
 
   /* ------------------------------ 加密货币 ------------------------------ */
@@ -582,20 +699,31 @@
 
   /* ------------------------------- 汇总报价 ------------------------------ */
 
-  async function customEastMoneyQuote(secid, category, type) {
+  async function customEastMoneyQuote(secid, category, type, symbol) {
     if (!/^\d+\.[A-Za-z0-9._-]+$/.test(String(secid || ''))) throw new Error('无效的行情代码');
     if (!['美股', 'A股', '港股'].includes(category)) throw new Error('不支持的市场');
     const currency = category === 'A股' ? 'CNY' : category === '港股' ? 'HKD' : 'USD';
-    const [quote, spark] = await Promise.all([
-      eastMoneyQuote(secid, currency),
-      eastMoneyTrendSpark(secid).catch(() => [])
-    ]);
-    quote.spark = spark;
-    if (type === '指数') {
-      quote.w52h = null;
-      quote.w52l = null;
+    try {
+      const [quote, spark] = await Promise.all([
+        eastMoneyQuote(secid, currency),
+        eastMoneyTrendSpark(secid).catch(() => [])
+      ]);
+      quote.spark = spark;
+      if (type === '指数') {
+        quote.w52h = null;
+        quote.w52l = null;
+      }
+      return quote;
+    } catch (error) {
+      let code = null;
+      if (symbol) {
+        if (category === '美股') code = `us${symbol}`;
+        else if (category === '港股') code = `hk${symbol}`;
+        else code = String(symbol).startsWith('6') ? `sh${symbol}` : `sz${symbol}`;
+      }
+      if (code) return tencentQuote(code, currency);
+      throw error;
     }
-    return quote;
   }
 
   async function goldQuote(metal) {
@@ -632,16 +760,21 @@
   async function quoteFor(id) {
     const eastMoney = EAST_MONEY_ASSETS[id];
     if (eastMoney) {
-      const [quote, spark] = await Promise.all([
-        eastMoneyQuote(eastMoney.secid, eastMoney.currency),
-        eastMoneyTrendSpark(eastMoney.secid).catch(() => [])
-      ]);
-      quote.spark = spark;
-      if (eastMoney.index) {
-        quote.w52h = null;
-        quote.w52l = null;
+      try {
+        const [quote, spark] = await Promise.all([
+          eastMoneyQuote(eastMoney.secid, eastMoney.currency),
+          eastMoneyTrendSpark(eastMoney.secid).catch(() => [])
+        ]);
+        quote.spark = spark;
+        if (eastMoney.index) {
+          quote.w52h = null;
+          quote.w52l = null;
+        }
+        return quote;
+      } catch (error) {
+        if (TENCENT_ASSETS[id]) return tencentQuote(TENCENT_ASSETS[id], eastMoney.currency);
+        throw error;
       }
-      return quote;
     }
 
     const crypto = CRYPTO_ASSETS[id];
@@ -657,7 +790,14 @@
     if (metal) return metalQuote(metal);
 
     const oil = OIL_ASSETS[id];
-    if (oil) return eastMoneyCommodityQuote(oil.secid, oil.currency);
+    if (oil) {
+      try {
+        return await eastMoneyCommodityQuote(oil.secid, oil.currency);
+      } catch (error) {
+        if (TENCENT_ASSETS[id]) return tencentQuote(TENCENT_ASSETS[id], oil.currency);
+        throw error;
+      }
+    }
 
     throw new Error('此资产暂未配置公开实时行情源');
   }
@@ -681,7 +821,20 @@
 
   async function chartData(id, range) {
     const eastMoney = EAST_MONEY_ASSETS[id];
-    if (eastMoney) return eastMoneyTrendChart(eastMoney.secid, range);
+    if (eastMoney) {
+      try {
+        return await eastMoneyTrendChart(eastMoney.secid, range);
+      } catch (error) {
+        if (TENCENT_ASSETS[id]) {
+          try {
+            return await tencentMinuteChart(TENCENT_ASSETS[id], range);
+          } catch (tencentError) {
+            // 继续抛出东方财富错误。
+          }
+        }
+        throw error;
+      }
+    }
 
     const oil = OIL_ASSETS[id];
     if (oil) return eastMoneyTrendChart(oil.secid, range);
@@ -715,7 +868,8 @@
           data = await customEastMoneyQuote(
             url.searchParams.get('secid'),
             url.searchParams.get('category'),
-            url.searchParams.get('type')
+            url.searchParams.get('type'),
+            url.searchParams.get('symbol')
           );
         }
       } else if (url.pathname === '/api/chart') {

@@ -50,6 +50,18 @@ const oilAssets = {
   brent: { secid: '112.B00Y', currency: 'USD' }
 };
 
+const tencentAssets = {
+  spx: 'usINX', nasdaq: 'usIXIC', dji: 'usDJI',
+  aapl: 'usAAPL', msft: 'usMSFT', nvda: 'usNVDA',
+  sh: 'sh000001', sz: 'sz399001', csi300: 'sh000300', gem: 'sz399006',
+  kweichow: 'sh600519', catl: 'sz300750',
+  hsi: 'hkHSI', hstech: 'hkHSTECH', hscei: 'hkHSCEI',
+  '0700': 'hk00700', '9988': 'hk09988',
+  wti: 'hf_CL', brent: 'hf_OIL'
+};
+
+const indexAssetIds = new Set(['spx', 'nasdaq', 'dji', 'sh', 'sz', 'csi300', 'gem', 'hsi', 'hstech', 'hscei']);
+
 function send(res, status, body, type = 'application/json') {
   res.writeHead(status, {
     'Content-Type': `${type}; charset=utf-8`,
@@ -84,6 +96,14 @@ async function fetchJson(url, options = {}) {
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
+}
+
+async function fetchText(url, timeout = 12000) {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(timeout)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.text();
 }
 
 /* ------------------------------ 东方财富 ------------------------------ */
@@ -218,7 +238,63 @@ async function eastMoneyTrendChart(secid, range) {
   return { points, timestamps, source: '东方财富 · 分时' };
 }
 
-/* ------------------------------- 资产搜索 ------------------------------ */
+function parseTencentQuote(raw, currency) {
+  if (!raw) throw new Error('腾讯行情未返回数据');
+  if (raw.includes('~')) {
+    const parts = raw.split('~');
+    const price = toNumber(parts[3]);
+    const previous = toNumber(parts[4]);
+    const percent = toNumber(parts[32]);
+    if (!Number.isFinite(price)) throw new Error('腾讯行情报价无效');
+    return {
+      price,
+      previousClose: Number.isFinite(previous)
+        ? previous
+        : (Number.isFinite(percent) && percent > -100 ? price / (1 + percent / 100) : null),
+      open: toNumber(parts[5]),
+      high: toNumber(parts[33]),
+      low: toNumber(parts[34]),
+      volume: toNumber(parts[6]),
+      marketCap: null,
+      pe: null,
+      w52h: null,
+      w52l: null,
+      currency,
+      spark: [],
+      source: '腾讯财经'
+    };
+  }
+
+  const cells = raw.split(',');
+  const price = toNumber(cells[0]);
+  const percent = toNumber(cells[1]);
+  const previous = toNumber(cells[7]);
+  if (!Number.isFinite(price)) throw new Error('腾讯行情报价无效');
+  return {
+    price,
+    previousClose: Number.isFinite(previous)
+      ? previous
+      : (Number.isFinite(percent) && percent > -100 ? price / (1 + percent / 100) : null),
+    open: toNumber(cells[8]),
+    high: toNumber(cells[4]),
+    low: toNumber(cells[5]),
+    volume: null,
+    marketCap: null,
+    pe: null,
+    w52h: null,
+    w52l: null,
+    currency,
+    spark: [],
+    source: '腾讯财经'
+  };
+}
+
+async function tencentQuote(code, currency) {
+  const text = await fetchText(`https://qt.gtimg.cn/q=${code}`, 10000);
+  const match = text.match(/="([^"]*)"/);
+  if (!match) throw new Error('腾讯行情未返回数据');
+  return parseTencentQuote(match[1], currency);
+}
 
 const EASTMONEY_SEARCH_TOKEN = 'D43BF722C8E33BDC906FB84D85E326E8';
 
@@ -309,18 +385,35 @@ async function searchAssets(query) {
   return [...cryptoFirst, ...eastMoney, ...cryptoRest].slice(0, 30);
 }
 
-async function customEastMoneyQuote(secid, category) {
+async function customEastMoneyQuote(secid, category, symbol, type) {
   if (!/^\d+\.[A-Za-z0-9._-]+$/.test(secid)) throw new Error('无效的行情代码');
   if (!['美股', 'A股', '港股'].includes(category)) throw new Error('不支持的市场');
   const currency = category === 'A股' ? 'CNY' : category === '港股' ? 'HKD' : 'USD';
-  const [quote, series] = await Promise.all([
-    eastMoneyQuote(secid, currency),
-    eastMoneySeries(secid).catch(() => ({ spark: [], w52h: null, w52l: null }))
-  ]);
-  quote.spark = series.spark;
-  if (Number.isFinite(series.w52h)) quote.w52h = series.w52h;
-  if (Number.isFinite(series.w52l)) quote.w52l = series.w52l;
-  return quote;
+  try {
+    const [quote, series, trendSpark] = await Promise.all([
+      eastMoneyQuote(secid, currency),
+      eastMoneySeries(secid).catch(() => ({ spark: [], w52h: null, w52l: null })),
+      eastMoneyTrendSpark(secid).catch(() => [])
+    ]);
+    quote.spark = trendSpark.length ? trendSpark : series.spark;
+    if (type === '指数') {
+      quote.w52h = null;
+      quote.w52l = null;
+    } else {
+      if (Number.isFinite(series.w52h)) quote.w52h = series.w52h;
+      if (Number.isFinite(series.w52l)) quote.w52l = series.w52l;
+    }
+    return quote;
+  } catch (error) {
+    let code = null;
+    if (symbol) {
+      if (category === '美股') code = `us${symbol}`;
+      else if (category === '港股') code = `hk${symbol}`;
+      else code = String(symbol).startsWith('6') ? `sh${symbol}` : `sz${symbol}`;
+    }
+    if (code) return tencentQuote(code, currency);
+    throw error;
+  }
 }
 
 /* ------------------------------- 纳斯达克 ------------------------------ */
@@ -896,18 +989,27 @@ async function quoteFor(id, cryptoPromise) {
 
   if (oilAssets[id]) {
     const config = oilAssets[id];
-    return eastMoneyCommodityQuote(config.secid, config.currency);
+    try {
+      return await eastMoneyCommodityQuote(config.secid, config.currency);
+    } catch (error) {
+      if (tencentAssets[id]) return tencentQuote(tencentAssets[id], config.currency);
+      throw error;
+    }
   }
 
   if (id === 'nasdaq') {
-    const quote = await nasdaqQuote('COMP', 'index');
     try {
-      const chart = await nasdaqChart('COMP', 'index');
-      quote.spark = chart.points.slice(-40);
+      const quote = await nasdaqQuote('COMP', 'index');
+      try {
+        const chart = await nasdaqChart('COMP', 'index');
+        quote.spark = chart.points.slice(-40);
+      } catch (error) {
+        quote.spark = [];
+      }
+      return quote;
     } catch (error) {
-      quote.spark = [];
+      return tencentQuote(tencentAssets.nasdaq, 'USD');
     }
-    return quote;
   }
 
   const mapping = eastMoneyAssets[id];
@@ -924,15 +1026,24 @@ async function quoteFor(id, cryptoPromise) {
       return quote;
     } catch (error) {
       const fallback = nasdaqAssets[id];
-      if (!fallback) throw error;
-      const quote = await nasdaqQuote(fallback.symbol, fallback.assetClass);
-      try {
-        const chart = await nasdaqChart(fallback.symbol, fallback.assetClass);
-        quote.spark = chart.points.slice(-40);
-      } catch (chartError) {
-        quote.spark = [];
+      if (fallback) {
+        try {
+          const quote = await nasdaqQuote(fallback.symbol, fallback.assetClass);
+          try {
+            const chart = await nasdaqChart(fallback.symbol, fallback.assetClass);
+            quote.spark = chart.points.slice(-40);
+          } catch (chartError) {
+            quote.spark = [];
+          }
+          return quote;
+        } catch (nasdaqError) {
+          // 继续尝试腾讯行情。
+        }
       }
-      return quote;
+      if (tencentAssets[id]) {
+        return tencentQuote(tencentAssets[id], mapping.currency);
+      }
+      throw error;
     }
   }
 
@@ -1052,7 +1163,9 @@ const server = http.createServer(async (req, res) => {
           })
         : await customEastMoneyQuote(
             url.searchParams.get('secid'),
-            url.searchParams.get('category')
+            url.searchParams.get('category'),
+            url.searchParams.get('symbol'),
+            url.searchParams.get('type')
           );
       send(res, 200, JSON.stringify(quote));
     } catch (error) {
