@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B1220" />
+  <title>Market View — 金融行情看板</title>
+  <link rel="stylesheet" href="styles.css?v=20261122-market-v8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Market View 首页">
+      <span class="brand-mark"><i></i><i></i><i></i></span>
+      <span>Market<span>View</span></span>
+    </a>
+
+    <label class="search-wrap" for="global-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+      <input id="global-search" type="search" autocomplete="off" placeholder="搜索名称或代码" />
+      <kbd>⌘ K</kbd>
+    </label>
+
+    <div class="top-actions">
+      <div class="market-status"><span class="status-dot"></span><span id="market-status-text">美股开盘中</span></div>
+      <button class="icon-btn" id="refresh-btn" title="刷新行情" aria-label="刷新行情">
+        <svg id="refresh-icon" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.7"></path><path d="M20 4v7h-7"></path></svg>
+      </button>
+      <button class="icon-btn" id="theme-btn" title="切换主题" aria-label="切换主题">
+        <svg class="theme-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="category-nav" aria-label="市场分类">
+    <div class="category-tabs" id="category-tabs"></div>
+  </nav>
+
+  <main class="main-content" id="main-content">
+    <div id="loading-state" class="loading-grid" aria-label="正在加载行情">
+      <div class="skeleton hero-skeleton"></div>
+      <div class="skeleton asset-skeleton"></div>
+      <div class="skeleton asset-skeleton"></div>
+      <div class="skeleton asset-skeleton"></div>
+      <div class="skeleton asset-skeleton"></div>
+    </div>
+
+    <div id="app-content" hidden>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow" id="page-eyebrow">MARKET OVERVIEW</p>
+          <h1 id="page-title">市场总览</h1>
+        </div>
+        <div class="heading-side">
+          <button class="add-favorite-btn" id="add-favorite-btn" type="button" title="添加自选">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <span>添加自选</span>
+          </button>
+          <div class="update-box">
+            <span>最后更新时间</span>
+            <strong id="last-update">--:--:--</strong>
+          </div>
+        </div>
+      </div>
+
+      <div id="alert-bar" class="alert-bar" hidden>
+        <span id="alert-text"></span>
+        <button id="retry-btn">重试</button>
+      </div>
+
+      <section id="market-content"></section>
+
+      <footer class="data-footer">
+        <span><i></i> Nasdaq / 东方财富 / Gold API 行情 · 数据仅供参考，不构成投资建议</span>
+        <button id="error-demo-btn">检查数据状态</button>
+      </footer>
+    </div>
+  </main>
+
+  <div class="drawer-overlay" id="drawer-overlay" hidden></div>
+  <aside class="detail-drawer" id="detail-drawer" aria-hidden="true" aria-label="资产详情">
+    <div id="detail-content"></div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="modal-overlay" id="add-modal" hidden>
+    <div class="add-modal" role="dialog" aria-modal="true" aria-labelledby="add-modal-title">
+      <div class="add-modal-head">
+        <div>
+          <h2 id="add-modal-title">添加自选</h2>
+          <p id="add-modal-subtitle">支持美股、A 股、港股、指数及加密货币，输入代码或名称即可搜索</p>
+        </div>
+        <button class="close-btn" id="close-add-modal" aria-label="关闭">×</button>
+      </div>
+      <label class="add-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+        <input id="add-search-input" type="search" autocomplete="off" placeholder="例如 TSLA / 600519 / 腾讯 / BTC" />
+      </label>
+      <div id="add-search-results" class="add-results">
+        <div class="add-hint">输入代码或名称开始搜索</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js?v=1"></script>
+  <script src="app.js?v=20261122-market-v22"></script>
+</body>
+</html>

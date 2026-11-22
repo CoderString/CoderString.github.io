@@ -1,0 +1,9 @@
+{
+  "name": "market-view",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-market responsive dashboard",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
