@@ -18,6 +18,7 @@ const eastMoneyAssets = {
   gem:      { secid: '0.399006',  currency: 'CNY' },
   kweichow: { secid: '1.600519',  currency: 'CNY' },
   catl:     { secid: '0.300750',  currency: 'CNY' },
+  nasdaq:   { secid: '100.NDX',   currency: 'USD' },
   hsi:      { secid: '100.HSI',   currency: 'HKD' },
   hstech:   { secid: '124.HSTECH', currency: 'HKD' },
   hscei:    { secid: '100.HSCEI', currency: 'HKD' },
@@ -1000,7 +1001,8 @@ async function quoteFor(id, cryptoPromise) {
     }
   }
 
-  if (id === 'nasdaq') {
+  // 纳斯达克 100 已改走东方财富（100.NDX），此分支仅在映射缺失时作为兜底
+  if (id === 'nasdaq' && !eastMoneyAssets.nasdaq) {
     try {
       const quote = await nasdaqQuote('COMP', 'index');
       try {
@@ -1165,7 +1167,8 @@ async function chartData(id, range) {
   const metal = metalAssets[id];
   if (metal) return eastMoneyChart(metal.secid, range).catch(() => eastMoneyTrendChart(metal.secid, range));
 
-  if (id === 'nasdaq') return nasdaqChart('COMP', 'index');
+  // 纳斯达克综合指数：优先东方财富 K 线（100.NDX），失败再回退 Nasdaq 折线
+  if (id === 'nasdaq') return eastMoneyChart('100.NDX', range).catch(() => nasdaqChart('COMP', 'index'));
 
   const crypto = cryptoAssets[id];
   if (crypto?.nasdaq) return nasdaqChart(crypto.nasdaq, 'crypto');
@@ -1236,7 +1239,7 @@ const server = http.createServer(async (req, res) => {
     try {
       let result;
       if (range === 'TS') {
-        const mapped = secid || eastMoneyAssets[id]?.secid || oilAssets[id]?.secid || metalAssets[id]?.secid;
+        const mapped = secid || eastMoneyAssets[id]?.secid || oilAssets[id]?.secid || metalAssets[id]?.secid || (id === 'nasdaq' ? '100.NDX' : null);
         if (mapped) result = await eastMoneyChart(mapped, 'TS').catch(() => eastMoneyIntraday(mapped));
         else if (crypto || cryptoAssets[id]) { const sym = crypto || cryptoAssets[id].symbol || id.toUpperCase(); result = await gateioCryptoChart(sym, 'TS').catch(() => cryptoIntraday(sym)); }
         else result = { points: [], timestamps: [], source: '该资产暂无分时数据' };

@@ -1,7 +1,7 @@
 // 资产元数据保留在前端，所有报价字段在首次成功请求后由 API 更新，避免使用静态模拟报价。
 const assets = [
   {id:'spx',name:'标普 500',symbol:'SPX',market:'美股',category:'美股',price:5846.72,change:28.43,changePercent:0.49,currency:'USD',unit:'指数点',spark:[42,44,43,47,46,49,51,50,54,56,55,59],details:{open:'5818.29',prev:'5818.29',high:'5862.14',low:'5806.82',volume:'3.42B',marketCap:'—',pe:'—',w52h:'5864.67',w52l:'4982.22'}},
-  {id:'nasdaq',name:'纳斯达克综合指数',symbol:'IXIC',market:'美股',category:'美股',price:18929.35,change:-42.31,changePercent:-0.22,currency:'USD',unit:'指数点',spark:[58,57,60,59,61,58,56,57,53,54,52,51],details:{open:'18971.66',prev:'18971.66',high:'19041.22',low:'18862.14',volume:'5.18B',marketCap:'—',pe:'—',w52h:'20261.31',w52l:'15966.35'}},
+  {id:'nasdaq',name:'纳斯达克 100',symbol:'NDX',market:'美股',category:'美股',price:18929.35,change:-42.31,changePercent:-0.22,currency:'USD',unit:'指数点',spark:[58,57,60,59,61,58,56,57,53,54,52,51],details:{open:'18971.66',prev:'18971.66',high:'19041.22',low:'18862.14',volume:'5.18B',marketCap:'—',pe:'—',w52h:'20261.31',w52l:'15966.35'}},
   {id:'dji',name:'道琼斯工业平均指数',symbol:'DJI',market:'美股',category:'美股',price:43840.91,change:286.15,changePercent:0.66,currency:'USD',unit:'指数点',spark:[38,40,39,43,42,45,47,46,49,48,52,54],details:{open:'43554.76',prev:'43554.76',high:'43912.40',low:'43482.11',volume:'312M',marketCap:'—',pe:'—',w52h:'45073.63',w52l:'36611.78'}},
   {id:'aapl',name:'苹果',symbol:'AAPL',market:'美股',category:'美股',price:233.28,change:2.16,changePercent:0.93,currency:'USD',unit:'每股美元',spark:[34,36,35,38,37,41,43,42,46,48,47,50],details:{open:'231.12',prev:'231.12',high:'234.01',low:'230.42',volume:'48.2M',marketCap:'3.52T',pe:'35.8',w52h:'237.49',w52l:'164.08'}},
   {id:'msft',name:'微软',symbol:'MSFT',market:'美股',category:'美股',price:421.50,change:-3.24,changePercent:-0.76,currency:'USD',unit:'每股美元',spark:[58,56,57,54,55,52,53,50,51,48,49,47],details:{open:'424.74',prev:'424.74',high:'426.18',low:'419.63',volume:'21.4M',marketCap:'3.13T',pe:'34.7',w52h:'468.35',w52l:'376.91'}},
@@ -1647,7 +1647,7 @@ async function loadMiniKline(asset){
   if (cached?.data) document.querySelectorAll(`.mini-chart[data-mini-id="${(window.CSS && CSS.escape) ? CSS.escape(asset.id) : asset.id}"]`).forEach(el => paintMiniKline(el, cached.data));
 }
 function hydrateMiniKlines(){
-  if (activeCategory !== '总览' || $('#global-search').value.trim()) return;
+  // 所有分类页、我的自选和搜索结果的卡片都使用迷你 K 线
   const queue = [];
   document.querySelectorAll('#market-content .mini-chart[data-mini-id]').forEach(el => {
     const id = el.dataset.miniId;
