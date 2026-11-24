@@ -212,7 +212,7 @@ function assetCard(asset, options = {}){
     <button class="card-open" data-id="${asset.id}" aria-label="查看 ${asset.name} 详情">
       <div class="asset-card-head"><div class="asset-title-group">${grip}<div><div class="asset-name">${asset.name}</div><div class="asset-symbol">${asset.symbol}</div></div></div><span class="asset-market">${asset.market}</span></div>
       <div class="asset-price-row"><div class="asset-price${Number.isFinite(asset.price)?'':' is-pending'}">${formatPrice(asset)}</div><div class="asset-change ${cls}"><div>${signed(asset.changePercent)}%</div><div>${signed(asset.change,priceDigits(asset.price))}</div></div></div>
-      <div class="mini-chart" title="分时走势">${sparkSvg(asset.spark,asset.changePercent>=0)}</div>
+      <div class="mini-chart" title="分时走势" data-mini-id="${escapeHtml(asset.id)}">${sparkSvg(asset.spark,asset.changePercent>=0)}</div>
       <div class="asset-meta"><span>${asset.currency} · ${asset.unit}</span><span>${formatTime(lastUpdate)}</span></div>
     </button>
     ${overviewRemove}${stockRemove}${action}
@@ -426,9 +426,10 @@ function renderMainChart(asset,range,opts={}){
       const vals=(data.points||[]).filter(Number.isFinite);
       if(silent&&vals.length<2)return;
       box.querySelectorAll('svg,.chart-loading,.chart-tooltip,.ts-axis,.ts-legend').forEach(el=>{if(el!==tooltip)el.remove()});
-      box.classList.remove('intraday');
+      box.classList.remove('intraday','kline');
       if(vals.length<2){tooltip.style.display='block';tooltip.textContent='当前区间暂无可用数据';return;}
       if(data.mode==='intraday'){renderIntradayChart(box,tooltip,asset,data,vals);return;}
+      if(data.mode==='kline'&&Array.isArray(data.opens)&&data.opens.length===vals.length){renderKlineChart(box,tooltip,asset,data,range);return;}
       const w=900,h=260,p=18,min=Math.min(...vals),max=Math.max(...vals),rangeV=max-min||1;
       const pts=vals.map((v,i)=>[p+i*(w-p*2)/(vals.length-1),h-p-(v-min)/rangeV*(h-p*2)]);
       const positive=asset.changePercent>=0;
@@ -445,6 +446,56 @@ function renderMainChart(asset,range,opts={}){
       box.onmouseleave=()=>tooltip.style.display='none';
     })
     .catch(error=>{if(silent||requestId!==chartRequestId)return;box.querySelectorAll('svg,.chart-loading').forEach(el=>el.remove());tooltip.style.display='block';tooltip.textContent=error.message});
+}
+
+// K 线图：蜡烛 + MA5/MA10/MA20 + 成交量柱
+function renderKlineChart(box,tooltip,asset,data,range){
+  const O=data.opens,C=data.points,H=data.highs,L=data.lows,V=data.volumes||[],T=data.timestamps||[];
+  const n=C.length,w=900,h=300,p=14,priceH=210,volTop=228,volH=h-volTop-6;
+  const hi=Math.max(...H),lo=Math.min(...L),pad=(hi-lo)*0.06||hi*0.002,top=hi+pad,bot=lo-pad;
+  const step=(w-p*2)/n,cw=Math.max(1,Math.min(14,step*0.68));
+  const x=i=>p+step*(i+0.5),y=v=>p+(top-v)/(top-bot)*(priceH-p);
+  const ma=k=>C.map((_,i)=>i<k-1?null:C.slice(i-k+1,i+1).reduce((a,b)=>a+b,0)/k);
+  const maLine=arr=>arr.map((v,i)=>v===null?null:`${x(i).toFixed(1)},${y(v).toFixed(1)}`).filter(Boolean).join(' ');
+  const ma5=ma(5),ma10=ma(10),ma20=ma(20);
+  const maxV=Math.max(...V,1);
+  let candles='',bars='';
+  for(let i=0;i<n;i++){
+    const up=C[i]>=O[i],col=up?'var(--up)':'var(--down)';
+    const yo=y(O[i]),yc=y(C[i]),bodyTop=Math.min(yo,yc),bodyH=Math.max(1,Math.abs(yc-yo));
+    candles+=`<line x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${y(H[i]).toFixed(1)}" y2="${y(L[i]).toFixed(1)}" stroke="${col}" stroke-width="1" vector-effect="non-scaling-stroke"/>`+
+      `<rect x="${(x(i)-cw/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${cw.toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${up?'var(--surface-2)':col}" stroke="${col}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    const bh=(V[i]||0)/maxV*volH;
+    bars+=`<rect x="${(x(i)-cw/2).toFixed(1)}" y="${(volTop+volH-bh).toFixed(1)}" width="${cw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}" opacity=".55"/>`;
+  }
+  const fmt=v=>v.toLocaleString('zh-CN',{minimumFractionDigits:priceDigits(v),maximumFractionDigits:priceDigits(v)});
+  const daily=['1M','3M','1Y'].includes(range);
+  const tfmt=ts=>ts?new Date(ts*1000).toLocaleString('zh-CN',daily?{timeZone:'Asia/Shanghai',year:'numeric',month:'numeric',day:'numeric'}:{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}):'';
+  box.classList.add('intraday','kline');
+  box.insertAdjacentHTML('afterbegin',`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <g stroke="var(--border)" stroke-width="1"><path d="M${p} ${y(top-(top-bot)/4)}H${w-p}"/><path d="M${p} ${y((top+bot)/2)}H${w-p}"/><path d="M${p} ${y(bot+(top-bot)/4)}H${w-p}"/><path d="M${p} ${volTop-8}H${w-p}"/></g>
+    ${candles}
+    <polyline points="${maLine(ma5)}" fill="none" stroke="#F59E0B" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+    <polyline points="${maLine(ma10)}" fill="none" stroke="#A78BFA" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+    <polyline points="${maLine(ma20)}" fill="none" stroke="#38BDF8" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+    ${bars}
+    <line class="ts-cross" x1="0" x2="0" y1="${p}" y2="${h-6}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" style="display:none"/>
+  </svg>
+  <div class="ts-axis ts-top"><span>${fmt(top)}</span></div>
+  <div class="ts-axis ts-bot"><span>${fmt(bot)}</span></div>
+  <div class="ts-legend"><i style="background:#F59E0B"></i>MA5<i style="background:#A78BFA"></i>MA10<i style="background:#38BDF8"></i>MA20<span>${escapeHtml(data.source||'')}</span></div>`);
+  const cross=box.querySelector('.ts-cross');
+  box.onmousemove=e=>{
+    const rect=box.getBoundingClientRect();const rx=Math.max(0,Math.min(e.clientX-rect.left,rect.width));
+    const i=Math.max(0,Math.min(n-1,Math.floor((rx/rect.width*w-p)/step)));
+    cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.style.display='';
+    const prev=i>0?C[i-1]:O[i],chg=(C[i]-prev)/prev*100;
+    tooltip.style.display='block';
+    tooltip.innerHTML=`<span>${tfmt(T[i])}</span>开 ${fmt(O[i])}　收 <b class="${C[i]>=O[i]?'up':'down'}">${fmt(C[i])}</b><br>高 ${fmt(H[i])}　低 ${fmt(L[i])}<br>涨跌 <b class="${chg>=0?'up':'down'}">${chg>=0?'+':''}${chg.toFixed(2)}%</b>　量 ${formatMarketVolume(V[i]||0)}`;
+    const tx=x(i)/w*rect.width;
+    tooltip.style.left=`${tx>rect.width-190?tx-190:tx+10}px`;tooltip.style.top='8px';
+  };
+  box.onmouseleave=()=>{tooltip.style.display='none';cross.style.display='none';};
 }
 
 // 分时图：价格线 + 均价线 + 昨收基准线 + 成交量柱
@@ -1544,6 +1595,81 @@ $('#add-search-results').addEventListener('click', event => {
   const result = addSearchResults.find(item => item.id === button.dataset.addResultId);
   if (result) addSearchResult(result);
 });
+
+/* ----------------------- 总览卡片迷你 K 线 ----------------------- */
+const miniKlineCache = new Map();
+const miniKlinePending = new Set();
+const MINI_KLINE_BARS = 36;
+function chartQueryFor(asset, range){
+  return asset.secid
+    ? `secid=${encodeURIComponent(asset.secid)}&range=${encodeURIComponent(range)}`
+    : asset.category === '加密货币' && asset.symbol
+      ? `crypto=${encodeURIComponent(asset.symbol)}&range=${encodeURIComponent(range)}`
+      : `id=${encodeURIComponent(asset.id)}&range=${encodeURIComponent(range)}`;
+}
+function miniKlineTtl(){ return Math.max(60, autoRefreshSeconds || 0) * 1000; }
+function miniKlineSvg(data){
+  const n0 = data.points.length, start = Math.max(0, n0 - MINI_KLINE_BARS);
+  const O = data.opens.slice(start), C = data.points.slice(start), H = data.highs.slice(start), L = data.lows.slice(start);
+  const n = C.length, w = 180, h = 42, p = 2;
+  const hi = Math.max(...H), lo = Math.min(...L), range = hi - lo || hi * 0.001 || 1;
+  const step = (w - p * 2) / n, cw = Math.max(1, step * 0.62);
+  const x = i => p + step * (i + 0.5), y = v => p + (hi - v) / range * (h - p * 2);
+  let out = '';
+  for (let i = 0; i < n; i++) {
+    const up = C[i] >= O[i], col = up ? 'var(--up)' : 'var(--down)';
+    const yo = y(O[i]), yc = y(C[i]);
+    out += `<line x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${y(H[i]).toFixed(1)}" y2="${y(L[i]).toFixed(1)}" stroke="${col}" stroke-width="1" vector-effect="non-scaling-stroke"/>`
+      + `<rect x="${(x(i) - cw / 2).toFixed(1)}" y="${Math.min(yo, yc).toFixed(1)}" width="${cw.toFixed(1)}" height="${Math.max(0.8, Math.abs(yc - yo)).toFixed(1)}" fill="${col}"/>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${out}</svg>`;
+}
+function paintMiniKline(el, data){
+  el.innerHTML = miniKlineSvg(data);
+  el.classList.add('is-kline');
+  el.title = 'K 线（1D · 5 分钟）';
+}
+async function loadMiniKline(asset){
+  if (miniKlinePending.has(asset.id)) return;
+  miniKlinePending.add(asset.id);
+  try {
+    const response = await apiFetch(`/api/chart?${chartQueryFor(asset, '1D')}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    const ok = data && Array.isArray(data.opens) && Array.isArray(data.points) && data.opens.length === data.points.length && data.points.length >= 2;
+    miniKlineCache.set(asset.id, { at: Date.now(), data: ok ? data : null });
+  } catch (error) {
+    miniKlineCache.set(asset.id, { at: Date.now(), data: null });
+  } finally {
+    miniKlinePending.delete(asset.id);
+  }
+  const cached = miniKlineCache.get(asset.id);
+  if (cached?.data) document.querySelectorAll(`.mini-chart[data-mini-id="${(window.CSS && CSS.escape) ? CSS.escape(asset.id) : asset.id}"]`).forEach(el => paintMiniKline(el, cached.data));
+}
+function hydrateMiniKlines(){
+  if (activeCategory !== '总览' || $('#global-search').value.trim()) return;
+  const queue = [];
+  document.querySelectorAll('#market-content .mini-chart[data-mini-id]').forEach(el => {
+    const id = el.dataset.miniId;
+    const cached = miniKlineCache.get(id);
+    if (cached?.data) paintMiniKline(el, cached.data);
+    if (!cached || Date.now() - cached.at > miniKlineTtl()) {
+      const asset = assets.find(item => item.id === id);
+      if (asset && !queue.includes(asset)) queue.push(asset);
+    }
+  });
+  // 限制并发，避免一次性打满公开接口
+  let index = 0;
+  const worker = async () => { while (index < queue.length) await loadMiniKline(queue[index++]); };
+  for (let k = 0; k < Math.min(4, queue.length); k++) worker();
+}
+{
+  const baseRender = renderMarketContent;
+  renderMarketContent = function(){
+    baseRender();
+    hydrateMiniKlines();
+  };
+}
 
 async function init(){
   renderCategories();

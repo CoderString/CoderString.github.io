@@ -6,10 +6,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0B1220" />
   <title>Market View — 金融行情看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261124-ui-v15" />
+  <link rel="stylesheet" href="styles.css?v=20261124-ui-v18" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
+<script src="config.js?v=3"></script>
+<script>
+(function(){
+  var KEY='marketViewAuth';
+  function hex(buf){return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0')}).join('')}
+  function hash(pw){return crypto.subtle.digest('SHA-256',new TextEncoder().encode('mv-salt:'+pw)).then(hex)}
+  window.MarketAuth={hash:function(pw){return hash(pw).then(function(h){console.log(h);return h})},logout:function(){localStorage.removeItem(KEY);location.reload()}};
+  var target=String(window.MARKET_ACCESS_HASH||'');
+  if(!target)return;
+  try{var s=JSON.parse(localStorage.getItem(KEY)||'null');if(s&&s.h===target&&s.exp>Date.now())return;}catch(e){}
+  document.documentElement.classList.add('auth-locked');
+  document.addEventListener('DOMContentLoaded',function(){
+    var g=document.createElement('div');g.className='auth-gate';
+    g.innerHTML='<form class="auth-card" autocomplete="off"><span class="brand-mark"><i></i><i></i><i></i></span><h1>Market View</h1><p>请输入访问密码</p><input type="password" id="auth-input" placeholder="访问密码" aria-label="访问密码" autofocus><label class="auth-remember"><input type="checkbox" id="auth-remember" checked> '+(window.MARKET_ACCESS_DAYS||7)+' 天内免输入</label><button type="submit">进入</button><div class="auth-error" id="auth-error" role="alert"></div></form>';
+    document.body.appendChild(g);
+    var input=g.querySelector('#auth-input');setTimeout(function(){input.focus()},50);
+    g.querySelector('form').addEventListener('submit',function(e){
+      e.preventDefault();
+      hash(input.value).then(function(h){
+        if(h!==target){var err=g.querySelector('#auth-error');err.textContent='密码不正确';g.querySelector('.auth-card').classList.remove('shake');void g.offsetWidth;g.querySelector('.auth-card').classList.add('shake');input.select();return;}
+        var days=g.querySelector('#auth-remember').checked?(window.MARKET_ACCESS_DAYS||7):0.5/24;
+        localStorage.setItem(KEY,JSON.stringify({h:h,exp:Date.now()+days*864e5}));
+        document.documentElement.classList.remove('auth-locked');g.remove();
+      });
+    });
+  });
+})();
+</script>
 </head>
 <body>
   <header class="topbar">
@@ -119,8 +147,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=1"></script>
-  <script src="static-api.js?v=4"></script>
-  <script src="app.js?v=20261124-ui-v36"></script>
+    <script src="static-api.js?v=8"></script>
+  <script src="app.js?v=20261124-ui-v39"></script>
 </body>
 </html>

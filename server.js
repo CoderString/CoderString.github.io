@@ -614,24 +614,27 @@ async function gateioCryptoSpark(symbol) {
 
 async function gateioCryptoChart(symbol, range) {
   const config = {
-    '1D': { interval: '5m', limit: 288 },
+    'TS': { interval: '5m', limit: 288 },
+    '1D': { interval: '15m', limit: 96 },
     '5D': { interval: '1h', limit: 120 },
     '1M': { interval: '4h', limit: 180 },
     '3M': { interval: '1d', limit: 90 },
     '1Y': { interval: '1d', limit: 365 }
   }[range] || { interval: '4h', limit: 180 };
   const rows = await gateioCryptoCandles(symbol, config.interval, config.limit);
-  const points = [];
-  const timestamps = [];
+  // Gate.io 蜡烛字段：[时间, 计价成交额, 收, 高, 低, 开, 基础成交量, 是否收盘]
+  const points = [], opens = [], highs = [], lows = [], volumes = [], timestamps = [];
   rows.forEach(row => {
-    const close = Number.parseFloat(row[2]);
+    const close = Number.parseFloat(row[2]), high = Number.parseFloat(row[3]);
+    const low = Number.parseFloat(row[4]), open = Number.parseFloat(row[5]);
     const stamp = Number.parseInt(row[0], 10);
-    if (!Number.isFinite(close)) return;
-    points.push(close);
+    if (![open, close, high, low].every(Number.isFinite)) return;
+    points.push(close); opens.push(open); highs.push(high); lows.push(low);
+    const vol = Number.parseFloat(row[6]); volumes.push(Number.isFinite(vol) ? vol : 0);
     timestamps.push(Number.isFinite(stamp) ? stamp : null);
   });
   if (!points.length) throw new Error('Gate.io 未返回走势数据');
-  return { points, timestamps, source: 'Gate.io' };
+  return { mode: 'kline', points, opens, highs, lows, volumes, timestamps, source: 'Gate.io · K 线' };
 }
 
 async function cryptoChart(symbol, range) {
@@ -1119,6 +1122,7 @@ async function cryptoIntraday(symbol){
 
 
 const rangeOptions = {
+  'TS': { klt: 1, lmt: 400 },
   '1D': { klt: 5, lmt: 240 },
   '5D': { klt: 15, lmt: 240 },
   '1M': { klt: 101, lmt: 22 },
@@ -1126,22 +1130,29 @@ const rangeOptions = {
   '1Y': { klt: 101, lmt: 250 }
 };
 
+
+function parseKlineRows(rows, source){
+  const points = [], opens = [], highs = [], lows = [], volumes = [], timestamps = [];
+  rows.forEach(row => {
+    const c = String(row).split(',');
+    const open = Number.parseFloat(c[1]), close = Number.parseFloat(c[2]);
+    const high = Number.parseFloat(c[3]), low = Number.parseFloat(c[4]);
+    if (![open, close, high, low].every(Number.isFinite)) return;
+    opens.push(open); points.push(close); highs.push(high); lows.push(low);
+    const v = Number.parseFloat(c[5]); volumes.push(Number.isFinite(v) ? v : 0);
+    const raw = String(c[0]);
+    const stamp = Date.parse((raw.includes(' ') ? raw.replace(' ', 'T') : raw + 'T15:00') + '+08:00');
+    timestamps.push(Number.isFinite(stamp) ? Math.floor(stamp / 1000) : null);
+  });
+  if (!points.length) throw new Error('东方财富未返回 K 线数据');
+  return { mode: 'kline', points, opens, highs, lows, volumes, timestamps, source };
+}
+
 async function eastMoneyChart(secid, range) {
   if (!/^\d+\.[A-Za-z0-9._-]+$/.test(secid)) throw new Error('无效的行情代码');
   const options = rangeOptions[range] || rangeOptions['1M'];
   const rows = await eastMoneyKlines(secid, options);
-  const points = [];
-  const timestamps = [];
-  rows.forEach(row => {
-    const cells = row.split(',');
-    const close = Number.parseFloat(cells[2]);
-    if (!Number.isFinite(close)) return;
-    points.push(close);
-    const stamp = Date.parse(cells[0].includes(' ') ? cells[0].replace(' ', 'T') : cells[0]);
-    timestamps.push(Number.isFinite(stamp) ? Math.floor(stamp / 1000) : null);
-  });
-  if (!points.length) throw new Error('东方财富未返回走势数据');
-  return { points, timestamps, source: '东方财富' };
+  return parseKlineRows(rows, '东方财富 · K 线');
 }
 
 async function chartData(id, range) {
@@ -1149,10 +1160,10 @@ async function chartData(id, range) {
   if (mapping) return eastMoneyChart(mapping.secid, range);
 
   const oil = oilAssets[id];
-  if (oil) return eastMoneyTrendChart(oil.secid, range);
+  if (oil) return eastMoneyChart(oil.secid, range).catch(() => eastMoneyTrendChart(oil.secid, range));
 
   const metal = metalAssets[id];
-  if (metal) return eastMoneyTrendChart(metal.secid, range);
+  if (metal) return eastMoneyChart(metal.secid, range).catch(() => eastMoneyTrendChart(metal.secid, range));
 
   if (id === 'nasdaq') return nasdaqChart('COMP', 'index');
 
@@ -1226,8 +1237,8 @@ const server = http.createServer(async (req, res) => {
       let result;
       if (range === 'TS') {
         const mapped = secid || eastMoneyAssets[id]?.secid || oilAssets[id]?.secid || metalAssets[id]?.secid;
-        if (mapped) result = await eastMoneyIntraday(mapped);
-        else if (crypto || cryptoAssets[id]) result = await cryptoIntraday(crypto || cryptoAssets[id].symbol || id.toUpperCase());
+        if (mapped) result = await eastMoneyChart(mapped, 'TS').catch(() => eastMoneyIntraday(mapped));
+        else if (crypto || cryptoAssets[id]) { const sym = crypto || cryptoAssets[id].symbol || id.toUpperCase(); result = await gateioCryptoChart(sym, 'TS').catch(() => cryptoIntraday(sym)); }
         else result = { points: [], timestamps: [], source: '该资产暂无分时数据' };
       } else if (secid) {
         result = await eastMoneyChart(secid, range);
