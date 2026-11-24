@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="zh-CN" data-theme="dark">
+<script>(function(){try{var t=localStorage.getItem('marketViewTheme');if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.dataset.theme=t;var c=localStorage.getItem('marketViewColor');if(c==='cn')document.documentElement.dataset.color='cn';}catch(e){}})();</script>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0B1220" />
   <title>Market View — 金融行情看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261122-market-v9" />
+  <link rel="stylesheet" href="styles.css?v=20261124-ui-v15" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -28,8 +29,10 @@
       <button class="icon-btn" id="refresh-btn" title="刷新行情" aria-label="刷新行情">
         <svg id="refresh-icon" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.7"></path><path d="M20 4v7h-7"></path></svg>
       </button>
+      <button class="icon-btn color-toggle" id="color-btn" title="切换涨跌配色" aria-label="切换涨跌配色"><span class="c-up">涨</span><span class="c-down">跌</span></button>
       <button class="icon-btn" id="theme-btn" title="切换主题" aria-label="切换主题">
         <svg class="theme-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"></path></svg>
+        <svg class="theme-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
       </button>
     </div>
   </header>
@@ -58,6 +61,17 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
             <span>添加自选</span>
           </button>
+          <div class="auto-refresh" title="自动刷新行情">
+            <span class="live-dot" id="live-dot"></span>
+            <select id="auto-refresh-select" aria-label="自动刷新间隔">
+              <option value="0">自动刷新：关</option>
+              <option value="10">每 10 秒</option>
+              <option value="30">每 30 秒</option>
+              <option value="60">每 1 分钟</option>
+              <option value="300">每 5 分钟</option>
+            </select>
+            <em id="refresh-countdown"></em>
+          </div>
           <div class="update-box">
             <span>最后更新时间</span>
             <strong id="last-update">--:--:--</strong>
@@ -106,7 +120,7 @@
   </div>
 
   <script src="config.js?v=1"></script>
-  <script src="static-api.js?v=3"></script>
-  <script src="app.js?v=20261122-market-v25"></script>
+  <script src="static-api.js?v=4"></script>
+  <script src="app.js?v=20261124-ui-v36"></script>
 </body>
 </html>

@@ -1075,6 +1075,49 @@ async function marketData() {
 
 /* ------------------------------- 走势图表 ------------------------------ */
 
+function parseIntradayRows(rows, preClose, source){
+  const points = [], avg = [], volumes = [], timestamps = [];
+  rows.forEach(row => {
+    const c = String(row).split(',');
+    const close = Number.parseFloat(c[2]);
+    if (!Number.isFinite(close) || close <= 0) return;
+    points.push(close);
+    const a = Number.parseFloat(c[7]);
+    avg.push(Number.isFinite(a) && a > 0 ? a : null);
+    const v = Number.parseFloat(c[5]);
+    volumes.push(Number.isFinite(v) ? v : 0);
+    const stamp = Date.parse(String(c[0]).replace(' ', 'T') + '+08:00');
+    timestamps.push(Number.isFinite(stamp) ? Math.floor(stamp / 1000) : null);
+  });
+  if (!points.length) throw new Error('暂无分时数据（可能尚未开盘）');
+  return { mode: 'intraday', points, avg, volumes, timestamps, preClose: Number.isFinite(preClose) ? preClose : null, source };
+}
+async function eastMoneyIntraday(secid){
+  const json = await fetchJson(`https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0`, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 });
+  const data = json?.data || {};
+  const pre = Number(data.preClose ?? data.prePrice);
+  return parseIntradayRows(Array.isArray(data.trends) ? data.trends : [], pre, '东方财富 · 分时');
+}
+async function cryptoIntraday(symbol){
+  const rows = await gateioCryptoCandles(symbol, '5m', 288);
+  const points = [], volumes = [], timestamps = [], avg = [];
+  let sumPV = 0, sumV = 0;
+  rows.forEach(row => {
+    const close = Number.parseFloat(row[2]);
+    if (!Number.isFinite(close)) return;
+    const base = Number.parseFloat(row[6] ?? row[1]);
+    const vol = Number.isFinite(base) ? base : 0;
+    sumPV += close * vol; sumV += vol;
+    points.push(close); volumes.push(vol);
+    avg.push(sumV ? sumPV / sumV : close);
+    timestamps.push(Number.parseInt(row[0], 10) || null);
+  });
+  if (!points.length) throw new Error('Gate.io 未返回分时数据');
+  const open = Number.parseFloat(rows[0]?.[5]);
+  return { mode: 'intraday', points, avg, volumes, timestamps, preClose: Number.isFinite(open) ? open : points[0], source: 'Gate.io · 24 小时分时' };
+}
+
+
 const rangeOptions = {
   '1D': { klt: 5, lmt: 240 },
   '5D': { klt: 15, lmt: 240 },
@@ -1181,7 +1224,12 @@ const server = http.createServer(async (req, res) => {
     const range = url.searchParams.get('range') || '1D';
     try {
       let result;
-      if (secid) {
+      if (range === 'TS') {
+        const mapped = secid || eastMoneyAssets[id]?.secid || oilAssets[id]?.secid || metalAssets[id]?.secid;
+        if (mapped) result = await eastMoneyIntraday(mapped);
+        else if (crypto || cryptoAssets[id]) result = await cryptoIntraday(crypto || cryptoAssets[id].symbol || id.toUpperCase());
+        else result = { points: [], timestamps: [], source: '该资产暂无分时数据' };
+      } else if (secid) {
         result = await eastMoneyChart(secid, range);
       } else if (crypto) {
         try {
